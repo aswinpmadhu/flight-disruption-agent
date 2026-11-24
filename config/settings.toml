@@ -1,0 +1,27 @@
+# Application settings (docs/03 section 10, NFR-06).
+#
+# This file contains NO secrets. The Anthropic API key is read only from the
+# ANTHROPIC_API_KEY environment variable and must never be written here.
+# Unknown keys are rejected on load.
+#
+# Values are the ones already approved in docs/01, docs/02 and docs/03.
+# The exact model ID is a setup item and is intentionally not set yet.
+
+[agent]
+max_tool_rounds = 8        # FR-04
+temperature = 0.2          # NFR-10: low, at most 0.2
+
+[session]
+idle_timeout_minutes = 30  # FR-05
+
+[search]
+mct_minutes = 60           # Q2: illustrative demo value, not a real airline standard
+window_hours = 24          # T3
+same_cabin_only = true     # T4
+max_options = 3            # FR-03
+
+[retrieval]
+top_k = 3                  # FR-18
+
+[reply_filter]
+max_chars = 300            # docs/03 section 6.3

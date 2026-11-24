@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flight-disruption-agent"
+version = "0.1.0"
+description = "AI flight disruption recovery agent (hackathon demo, synthetic data only)"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.9,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+]
+
+# The repository root holds several top-level folders (config, data, docs, tests),
+# so the package list is explicit instead of relying on auto-discovery.
+[tool.setuptools.packages.find]
+include = ["flight_agent*"]
+namespaces = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["--import-mode=importlib"]
