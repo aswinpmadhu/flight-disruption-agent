@@ -146,9 +146,16 @@ class PolicyPassage(_Frozen):
     section_title: str = Field(min_length=1)
     citation: str = Field(min_length=1)
     text: str
-    score: float
+    score: float = Field(allow_inf_nan=False)
 
 
 class PolicySearchResult(_Frozen):
     passages: tuple[PolicyPassage, ...] = Field(max_length=3)
     no_relevant_policy: bool
+
+    @model_validator(mode="after")
+    def _flag_matches_passages(self) -> "PolicySearchResult":
+        # docs/03 section 7: when no chunk passes, passages is [] and no_relevant_policy is true.
+        if self.no_relevant_policy != (len(self.passages) == 0):
+            raise ValueError("no_relevant_policy must be true exactly when passages is empty")
+        return self

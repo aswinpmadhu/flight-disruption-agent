@@ -127,6 +127,28 @@ def test_contract_models_flight_status_accepts_cancelled_without_estimates() -> 
         FlightStatus(status="DELAYED", scheduled_departure=_dt(1), scheduled_arrival=_dt(1, 9), delay_minutes=-1)
 
 
+def test_contract_models_policy_result_flag_matches_passages() -> None:
+    passage = PolicyPassage(
+        policy_id="POL-CANCEL-01", section_id="s2", section_title="Rebooking",
+        citation="POL-CANCEL-01 §2", text="text", score=1.5,
+    )
+    assert PolicySearchResult(passages=[], no_relevant_policy=True).no_relevant_policy
+    assert not PolicySearchResult(passages=[passage], no_relevant_policy=False).no_relevant_policy
+    with pytest.raises(ValidationError):
+        PolicySearchResult(passages=[], no_relevant_policy=False)
+    with pytest.raises(ValidationError):
+        PolicySearchResult(passages=[passage], no_relevant_policy=True)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_contract_models_passage_score_must_be_finite(bad: float) -> None:
+    with pytest.raises(ValidationError):
+        PolicyPassage(
+            policy_id="POL-CANCEL-01", section_id="s2", section_title="Rebooking",
+            citation="POL-CANCEL-01 §2", text="text", score=bad,
+        )
+
+
 def test_contract_models_policy_result_holds_at_most_three_passages() -> None:
     passage = PolicyPassage(
         policy_id="POL-CANCEL-01", section_id="s2", section_title="Rebooking",
