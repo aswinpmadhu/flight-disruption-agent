@@ -7,13 +7,17 @@ Three rules, applied to every ``*.py`` file under ``flight_agent/`` (``tests/`` 
 2. Verifier rule: inside ``models.py`` the helper may be called only from a validator method
    of class ``Itinerary``. The helper's own ``def`` is not a call.
 3. No-parse rule: nothing may split, partition, slice, index or regex-match a value named
-   ``itinerary_key`` or ``<expr>.itinerary_key``.
+   ``itinerary_key`` or ``<expr>.itinerary_key``, a name assigned from such a value
+   (``k = itinerary_key``, ``k: str = self.itinerary_key``), or ``str(...)`` of one.
 
 Imports, comments, docstrings, string constants, annotations and non-call references never fail
 rules 1 and 2. A file that does not parse fails.
 
-Stated limit: dynamic indirection (``getattr``, ``globals()``, ``importlib``, assigning the
-function to another name, ``functools.partial``) is not detected; code review covers it.
+Stated limits: dynamic indirection (``getattr``, ``globals()``, ``importlib``, assigning the
+function to another name, ``functools.partial``) is not detected. The no-parse rule follows only
+the name ``itinerary_key``, simple assignments of it and ``str(...)``; a key passed through a
+function parameter or other transformation under another name is not detected. Code review covers
+both.
 """
 
 import ast
@@ -30,12 +34,6 @@ PARSE_METHODS = {"split", "rsplit", "partition", "rpartition", "removeprefix", "
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = REPO_ROOT / "flight_agent"
-
-
-def _is_key_expr(node: ast.AST) -> bool:
-    return (isinstance(node, ast.Name) and node.id == KEY_NAME) or (
-        isinstance(node, ast.Attribute) and node.attr == KEY_NAME
-    )
 
 
 def _decorator_name(node: ast.expr) -> str:
@@ -55,6 +53,21 @@ class _Checker(ast.NodeVisitor):
         self.helper_names: set[str] = {HELPER}
         self.re_names: set[str] = {"re"}
         self.stack: list[ast.AST] = []
+        self.key_aliases: set[str] = set()
+
+    def _is_key_expr(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id == KEY_NAME or node.id in self.key_aliases
+        if isinstance(node, ast.Attribute):
+            return node.attr == KEY_NAME
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "str"
+            and len(node.args) == 1
+        ):
+            return self._is_key_expr(node.args[0])
+        return False
 
     def _fail(self, node: ast.AST, message: str) -> None:
         self.violations.append(f"{self.relpath}:{getattr(node, 'lineno', 0)}: {message}")
@@ -99,19 +112,29 @@ class _Checker(ast.NodeVisitor):
                 self._fail(node, f"{HELPER} may only be called in models.py and services/alternatives.py")
             elif self.relpath == MODELS and not self._in_itinerary_validator():
                 self._fail(node, f"in models.py {HELPER} may only be called from the Itinerary validator")
-        if isinstance(func, ast.Attribute) and func.attr in PARSE_METHODS and _is_key_expr(func.value):
+        if isinstance(func, ast.Attribute) and func.attr in PARSE_METHODS and self._is_key_expr(func.value):
             self._fail(node, f"{KEY_NAME} must not be parsed (.{func.attr})")
         if (
             isinstance(func, ast.Attribute)
             and isinstance(func.value, ast.Name)
             and func.value.id in self.re_names
-            and any(_is_key_expr(arg) for arg in [*node.args, *(k.value for k in node.keywords)])
+            and any(self._is_key_expr(arg) for arg in [*node.args, *(k.value for k in node.keywords)])
         ):
             self._fail(node, f"{KEY_NAME} must not be matched with a regular expression")
         self.generic_visit(node)
 
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if self._is_key_expr(node.value):
+            self.key_aliases.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None and self._is_key_expr(node.value) and isinstance(node.target, ast.Name):
+            self.key_aliases.add(node.target.id)
+        self.generic_visit(node)
+
     def visit_Subscript(self, node: ast.Subscript) -> None:
-        if _is_key_expr(node.value):
+        if self._is_key_expr(node.value):
             self._fail(node, f"{KEY_NAME} must not be indexed or sliced")
         self.generic_visit(node)
 
@@ -212,6 +235,10 @@ def test_dk10_single_producer_selftest_validator_call_in_models_passes() -> None
         'rest = itinerary_key.removeprefix("MD")',
         'import re\nm = re.match(r"MD", itinerary_key)',
         'import re as regex\nm = regex.search("x", string=itinerary_key)',
+        'k = itinerary_key\nparts = k.split("+")',
+        'k: str = self.itinerary_key\nfirst = k[:5]',
+        'parts = str(itinerary_key).split("+")',
+        'a = itinerary_key\nb = a\nparts = b.partition(":")',
     ],
 )
 def test_dk10_single_producer_selftest_parsing_a_key_fails(snippet: str) -> None:

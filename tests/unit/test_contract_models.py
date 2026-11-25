@@ -154,15 +154,17 @@ def test_contract_models_key_two_segments_across_midnight() -> None:
     assert derive_itinerary_key(segments) == "MD101:2026-12-01+MD205:2026-12-02"
 
 
-def test_contract_models_key_uses_the_scheduled_date_not_the_estimated_one() -> None:
-    segment = _segment("MD101", day=1, hour=23)
-    status = FlightStatus(
-        status="DELAYED", scheduled_departure=segment.scheduled_departure,
-        scheduled_arrival=segment.scheduled_arrival, estimated_departure=_dt(2, 1),
-        estimated_arrival=_dt(2, 2), delay_minutes=120,
+def test_contract_models_key_depends_only_on_flight_number_and_scheduled_departure_date() -> None:
+    base = _segment("MD101", day=1, hour=23)
+    # Same flight, same scheduled departure date: arrival (next UTC day), airports and time of day do not matter.
+    other = _segment(
+        "MD101", day=1, hour=2, origin="JFK", destination="FRA",
+        scheduled_arrival=_dt(2, 5),
     )
-    assert status.estimated_departure.date() != segment.scheduled_departure.date()
-    assert derive_itinerary_key([segment]) == "MD101:2026-12-01"
+    assert derive_itinerary_key([base]) == derive_itinerary_key([other]) == "MD101:2026-12-01"
+    # A different scheduled departure date or flight number changes the key.
+    assert derive_itinerary_key([_segment("MD101", day=2)]) == "MD101:2026-12-02"
+    assert derive_itinerary_key([_segment("MD102", day=1)]) == "MD102:2026-12-01"
 
 
 def test_contract_models_key_is_pure_and_deterministic() -> None:
